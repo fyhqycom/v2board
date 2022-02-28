@@ -15,16 +15,16 @@ class OrderSave extends FormRequest
     {
         return [
             'plan_id' => 'required',
-            'cycle' => 'required|in:month_price,quarter_price,half_year_price,year_price,onetime_price,reset_price'
+            'period' => 'required|in:month_price,quarter_price,half_year_price,year_price,two_year_price,three_year_price,onetime_price,reset_price'
         ];
     }
 
     public function messages()
     {
         return [
-            'plan_id.required' => '套餐ID不能为空',
-            'cycle.required' => '套餐周期不能为空',
-            'cycle.in' => '套餐周期有误'
+            'plan_id.required' => __('Plan ID cannot be empty'),
+            'period.required' => __('Plan period cannot be empty'),
+            'period.in' => __('Wrong plan period')
         ];
     }
 }

@@ -3,16 +3,19 @@
 namespace App\Http\Controllers\User;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\User\UserTransfer;
 use App\Http\Requests\User\UserUpdate;
 use App\Http\Requests\User\UserChangePassword;
+use App\Utils\CacheKey;
 use Illuminate\Http\Request;
 use App\Models\User;
 use App\Models\Plan;
-use App\Models\Server;
+use App\Models\ServerV2ray;
 use App\Models\Ticket;
 use App\Utils\Helper;
 use App\Models\Order;
 use App\Models\ServerLog;
+use Illuminate\Support\Facades\Cache;
 
 class UserController extends Controller
 {
@@ -27,17 +30,22 @@ class UserController extends Controller
     public function changePassword(UserChangePassword $request)
     {
         $user = User::find($request->session()->get('id'));
+        if (!$user) {
+            abort(500, __('The user does not exist'));
+        }
         if (!Helper::multiPasswordVerify(
             $user->password_algo,
+            $user->password_salt,
             $request->input('old_password'),
             $user->password)
         ) {
-            abort(500, '旧密码有误');
+            abort(500, __('The old password is wrong'));
         }
         $user->password = password_hash($request->input('new_password'), PASSWORD_DEFAULT);
         $user->password_algo = NULL;
+        $user->password_salt = NULL;
         if (!$user->save()) {
-            abort(500, '保存失败');
+            abort(500, __('Save failed'));
         }
         $request->session()->flush();
         return response([
@@ -54,7 +62,6 @@ class UserController extends Controller
                 'last_login_at',
                 'created_at',
                 'banned',
-                'is_admin',
                 'remind_expire',
                 'remind_traffic',
                 'expired_at',
@@ -63,9 +70,13 @@ class UserController extends Controller
                 'plan_id',
                 'discount',
                 'commission_rate',
-                'telegram_id'
+                'telegram_id',
+                'uuid'
             ])
             ->first();
+        if (!$user) {
+            abort(500, __('The user does not exist'));
+        }
         $user['avatar_url'] = 'https://cdn.v2ex.com/gravatar/' . md5($user->email) . '?s=64&d=identicon';
         return response([
             'data' => $user
@@ -91,14 +102,28 @@ class UserController extends Controller
 
     public function getSubscribe(Request $request)
     {
-        $user = User::find($request->session()->get('id'));
+        $user = User::where('id', $request->session()->get('id'))
+            ->select([
+                'plan_id',
+                'token',
+                'expired_at',
+                'u',
+                'd',
+                'transfer_enable',
+                'email'
+            ])
+            ->first();
+        if (!$user) {
+            abort(500, __('The user does not exist'));
+        }
         if ($user->plan_id) {
             $user['plan'] = Plan::find($user->plan_id);
             if (!$user['plan']) {
-                abort(500, '订阅计划不存在');
+                abort(500, __('Subscription plan does not exist'));
             }
         }
-        $user['subscribe_url'] = config('v2board.subscribe_url', config('v2board.app_url', env('APP_URL'))) . '/api/v1/client/subscribe?token=' . $user['token'];
+        $user['subscribe_url'] = Helper::getSubscribeHost() . "/api/v1/client/subscribe?token={$user['token']}";
+        $user['reset_day'] = $this->getResetDay($user);
         return response([
             'data' => $user
         ]);
@@ -107,10 +132,13 @@ class UserController extends Controller
     public function resetSecurity(Request $request)
     {
         $user = User::find($request->session()->get('id'));
+        if (!$user) {
+            abort(500, __('The user does not exist'));
+        }
         $user->uuid = Helper::guid(true);
         $user->token = Helper::guid();
         if (!$user->save()) {
-            abort(500, '重置失败');
+            abort(500, __('Reset failed'));
         }
         return response([
             'data' => config('v2board.subscribe_url', config('v2board.app_url', env('APP_URL'))) . '/api/v1/client/subscribe?token=' . $user->token
@@ -126,12 +154,12 @@ class UserController extends Controller
 
         $user = User::find($request->session()->get('id'));
         if (!$user) {
-            abort(500, '该用户不存在');
+            abort(500, __('The user does not exist'));
         }
         try {
             $user->update($updateData);
         } catch (\Exception $e) {
-            abort(500, '保存失败');
+            abort(500, __('Save failed'));
         }
 
         return response([
@@ -139,25 +167,69 @@ class UserController extends Controller
         ]);
     }
 
-    public function transfer(Request $request)
+    public function transfer(UserTransfer $request)
     {
         $user = User::find($request->session()->get('id'));
         if (!$user) {
-            abort(500, '该用户不存在');
-        }
-        if ($request->input('transfer_amount') <= 0) {
-            abort(500, '参数错误');
+            abort(500, __('The user does not exist'));
         }
         if ($request->input('transfer_amount') > $user->commission_balance) {
-            abort(500, '推广佣金余额不足');
+            abort(500, __('Insufficient commission balance'));
         }
         $user->commission_balance = $user->commission_balance - $request->input('transfer_amount');
         $user->balance = $user->balance + $request->input('transfer_amount');
         if (!$user->save()) {
-            abort(500, '划转失败');
+            abort(500, __('Transfer failed'));
         }
         return response([
             'data' => true
+        ]);
+    }
+
+    private function getResetDay(User $user)
+    {
+        if ($user->expired_at <= time() || $user->expired_at === NULL) return null;
+        // if reset method is not reset
+        if (isset($user->plan->reset_traffic_method) && $user->plan->reset_traffic_method === 2) return null;
+        $day = date('d', $user->expired_at);
+        $today = date('d');
+        $lastDay = date('d', strtotime('last day of +0 months'));
+
+        if ((int)config('v2board.reset_traffic_method') === 0) {
+            return $lastDay - $today;
+        }
+        if ((int)config('v2board.reset_traffic_method') === 1) {
+            if ((int)$day >= (int)$today && (int)$day >= (int)$lastDay) {
+                return $lastDay - $today;
+            }
+            if ((int)$day >= (int)$today) {
+                return $day - $today;
+            } else {
+                return $lastDay - $today + $day;
+            }
+        }
+        return null;
+    }
+
+
+    public function getQuickLoginUrl(Request $request)
+    {
+        $user = User::find($request->session()->get('id'));
+        if (!$user) {
+            abort(500, __('The user does not exist'));
+        }
+
+        $code = Helper::guid();
+        $key = CacheKey::get('TEMP_TOKEN', $code);
+        Cache::put($key, $user->id, 60);
+        $redirect = '/#/login?verify=' . $code . '&redirect=' . ($request->input('redirect') ? $request->input('redirect') : 'dashboard');
+        if (config('v2board.app_url')) {
+            $url = config('v2board.app_url') . $redirect;
+        } else {
+            $url = url($redirect);
+        }
+        return response([
+            'data' => $url
         ]);
     }
 }

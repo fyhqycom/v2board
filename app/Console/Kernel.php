@@ -25,15 +25,17 @@ class Kernel extends ConsoleKernel
     protected function schedule(Schedule $schedule)
     {
         // v2board
-        $schedule->command('v2board:cache')->hourly();
+        $schedule->command('v2board:statistics')->dailyAt('0:10');
         // check
         $schedule->command('check:order')->everyMinute();
         $schedule->command('check:commission')->everyMinute();
         // reset
         $schedule->command('reset:traffic')->daily();
-        $schedule->command('reset:serverLog')->monthly();
+        $schedule->command('reset:serverLog')->quarterly()->at('0:15');
         // send
         $schedule->command('send:remindMail')->dailyAt('11:30');
+        // horizon metrics
+        $schedule->command('horizon:snapshot')->everyFiveMinutes();
     }
 
     /**

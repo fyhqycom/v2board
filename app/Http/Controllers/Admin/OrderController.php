@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Requests\Admin\OrderAssign;
 use App\Http\Requests\Admin\OrderUpdate;
+use App\Http\Requests\Admin\OrderFetch;
 use App\Services\OrderService;
+use App\Services\UserService;
 use App\Utils\Helper;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
@@ -15,25 +17,36 @@ use Illuminate\Support\Facades\DB;
 
 class OrderController extends Controller
 {
-    public function fetch(Request $request)
+    private function filter(Request $request, &$builder)
+    {
+        if ($request->input('filter')) {
+            foreach ($request->input('filter') as $filter) {
+                if ($filter['key'] === 'email') {
+                    $user = User::where('email', "%{$filter['value']}%")->first();
+                    if (!$user) continue;
+                    $builder->where('user_id', $user->id);
+                    continue;
+                }
+                if ($filter['condition'] === '模糊') {
+                    $filter['condition'] = 'like';
+                    $filter['value'] = "%{$filter['value']}%";
+                }
+                $builder->where($filter['key'], $filter['condition'], $filter['value']);
+            }
+        }
+    }
+
+    public function fetch(OrderFetch $request)
     {
         $current = $request->input('current') ? $request->input('current') : 1;
         $pageSize = $request->input('pageSize') >= 10 ? $request->input('pageSize') : 10;
         $orderModel = Order::orderBy('created_at', 'DESC');
-        if ($request->input('trade_no')) {
-            $orderModel->where('trade_no', $request->input('trade_no'));
-        }
         if ($request->input('is_commission')) {
             $orderModel->where('invite_user_id', '!=', NULL);
-            $orderModel->where('status', 3);
+            $orderModel->whereNotIn('status', [0, 2]);
             $orderModel->where('commission_balance', '>', 0);
         }
-        if ($request->input('id')) {
-            $orderModel->where('id', $request->input('id'));
-        }
-        if ($request->input('user_id')) {
-            $orderModel->where('user_id', $request->input('user_id'));
-        }
+        $this->filter($request, $orderModel);
         $total = $orderModel->count();
         $res = $orderModel->forPage($current, $pageSize)
             ->get();
@@ -51,10 +64,45 @@ class OrderController extends Controller
         ]);
     }
 
+    public function paid(Request $request)
+    {
+        $order = Order::where('trade_no', $request->input('trade_no'))
+            ->first();
+        if (!$order) {
+            abort(500, '订单不存在');
+        }
+        if ($order->status !== 0) abort(500, '只能对待支付的订单进行操作');
+
+        $orderService = new OrderService($order);
+        if (!$orderService->paid('manual_operation')) {
+            abort(500, '更新失败');
+        }
+        return response([
+            'data' => true
+        ]);
+    }
+
+    public function cancel(Request $request)
+    {
+        $order = Order::where('trade_no', $request->input('trade_no'))
+            ->first();
+        if (!$order) {
+            abort(500, '订单不存在');
+        }
+        if ($order->status !== 0) abort(500, '只能对待支付的订单进行操作');
+
+        $orderService = new OrderService($order);
+        if (!$orderService->cancel()) {
+            abort(500, '更新失败');
+        }
+        return response([
+            'data' => true
+        ]);
+    }
+
     public function update(OrderUpdate $request)
     {
         $params = $request->only([
-            'status',
             'commission_status'
         ]);
 
@@ -64,42 +112,12 @@ class OrderController extends Controller
             abort(500, '订单不存在');
         }
 
-        if (isset($params['status']) && (int)$params['status'] === 2) {
-            $orderService = new OrderService($order);
-            if (!$orderService->cancel()) {
-                abort(500, '更新失败');
-            }
-            return response([
-                'data' => true
-            ]);
-        }
-
         try {
             $order->update($params);
         } catch (\Exception $e) {
             abort(500, '更新失败');
         }
 
-        return response([
-            'data' => true
-        ]);
-    }
-
-    public function repair(Request $request)
-    {
-        if (empty($request->input('trade_no'))) {
-            abort(500, '参数错误');
-        }
-        $order = Order::where('trade_no', $request->input('trade_no'))
-            ->where('status', 0)
-            ->first();
-        if (!$order) {
-            abort(500, '订单不存在或订单已支付');
-        }
-        $order->status = 1;
-        if (!$order->save()) {
-            abort(500, '保存失败');
-        }
         return response([
             'data' => true
         ]);
@@ -118,16 +136,21 @@ class OrderController extends Controller
             abort(500, '该订阅不存在');
         }
 
+        $userService = new UserService();
+        if ($userService->isNotCompleteOrderByUserId($user->id)) {
+            abort(500, '该用户还有待支付的订单，无法分配');
+        }
+
         DB::beginTransaction();
         $order = new Order();
         $orderService = new OrderService($order);
         $order->user_id = $user->id;
         $order->plan_id = $plan->id;
-        $order->cycle = $request->input('cycle');
+        $order->period = $request->input('period');
         $order->trade_no = Helper::guid();
         $order->total_amount = $request->input('total_amount');
 
-        if ($order->cycle === 'reset_price') {
+        if ($order->period === 'reset_price') {
             $order->type = 4;
         } else if ($user->plan_id !== NULL && $order->plan_id !== $user->plan_id) {
             $order->type = 3;

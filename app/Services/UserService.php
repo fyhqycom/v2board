@@ -2,8 +2,14 @@
 
 namespace App\Services;
 
+use App\Jobs\ServerLogJob;
+use App\Jobs\TrafficFetchJob;
+use App\Models\InviteCode;
 use App\Models\Order;
+use App\Models\ServerV2ray;
+use App\Models\Ticket;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 
 class UserService
 {
@@ -51,7 +57,7 @@ class UserService
 
     public function addBalance(int $userId, int $balance):bool
     {
-        $user = User::find($userId);
+        $user = User::lockForUpdate()->find($userId);
         if (!$user) {
             return false;
         }
@@ -76,18 +82,9 @@ class UserService
         return true;
     }
 
-    public function trafficFetch(int $u, int $d, int $userId):bool
+    public function trafficFetch(int $u, int $d, int $userId, object $server, string $protocol)
     {
-        $user = User::find($userId);
-        if (!$user) {
-            return false;
-        }
-        $user->t = time();
-        $user->u = $user->u + $u;
-        $user->d = $user->d + $d;
-        if (!$user->save()) {
-            return false;
-        }
-        return true;
+        TrafficFetchJob::dispatch($u, $d, $userId, $server, $protocol);
+        ServerLogJob::dispatch($u, $d, $userId, $server, $protocol);
     }
 }

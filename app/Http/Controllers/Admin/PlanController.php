@@ -42,7 +42,7 @@ class PlanController extends Controller
 
     public function save(PlanSave $request)
     {
-        $params = $request->only(array_keys(PlanSave::RULES));
+        $params = $request->validated();
         if ($request->input('id')) {
             $plan = Plan::find($request->input('id'));
             if (!$plan) {
@@ -52,8 +52,8 @@ class PlanController extends Controller
             // update user group id and transfer
             try {
                 User::where('plan_id', $plan->id)->update([
-                    'group_id' => $plan->group_id,
-                    'transfer_enable' => $plan->transfer_enable * 1073741824
+                    'group_id' => $params['group_id'],
+                    'transfer_enable' => $params['transfer_enable'] * 1073741824
                 ]);
                 $plan->update($params);
             } catch (\Exception $e) {

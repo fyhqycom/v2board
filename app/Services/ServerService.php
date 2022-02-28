@@ -3,72 +3,100 @@
 namespace App\Services;
 
 use App\Models\ServerLog;
+use App\Models\ServerShadowsocks;
 use App\Models\User;
-use App\Models\Server;
+use App\Models\ServerV2ray;
 use App\Models\ServerTrojan;
 use App\Utils\CacheKey;
-use App\Utils\Helper;
 use Illuminate\Support\Facades\Cache;
 
 class ServerService
 {
 
-    CONST V2RAY_CONFIG = '{"api":{"services":["HandlerService","StatsService"],"tag":"api"},"dns":{},"stats":{},"inbound":{"port":443,"protocol":"vmess","settings":{"clients":[]},"sniffing":{"enabled":true,"destOverride":["http","tls"]},"streamSettings":{"network":"tcp"},"tag":"proxy"},"inboundDetour":[{"listen":"0.0.0.0","port":23333,"protocol":"dokodemo-door","settings":{"address":"0.0.0.0"},"tag":"api"}],"log":{"loglevel":"debug","access":"access.log","error":"error.log"},"outbound":{"protocol":"freedom","settings":{}},"outboundDetour":[{"protocol":"blackhole","settings":{},"tag":"block"}],"routing":{"rules":[{"inboundTag":"api","outboundTag":"api","type":"field"}]},"policy":{"levels":{"0":{"handshake":4,"connIdle":300,"uplinkOnly":5,"downlinkOnly":30,"statsUserUplink":true,"statsUserDownlink":true}}}}';
+    CONST V2RAY_CONFIG = '{"api":{"services":["HandlerService","StatsService"],"tag":"api"},"dns":{},"stats":{},"inbound":{"port":443,"protocol":"vmess","settings":{"clients":[]},"sniffing":{"enabled":true,"destOverride":["http","tls"]},"streamSettings":{"network":"tcp"},"tag":"proxy"},"inboundDetour":[{"listen":"127.0.0.1","port":23333,"protocol":"dokodemo-door","settings":{"address":"0.0.0.0"},"tag":"api"}],"log":{"loglevel":"debug","access":"access.log","error":"error.log"},"outbound":{"protocol":"freedom","settings":{}},"outboundDetour":[{"protocol":"blackhole","settings":{},"tag":"block"}],"routing":{"rules":[{"inboundTag":"api","outboundTag":"api","type":"field"}]},"policy":{"levels":{"0":{"handshake":4,"connIdle":300,"uplinkOnly":5,"downlinkOnly":30,"statsUserUplink":true,"statsUserDownlink":true}}}}';
     CONST TROJAN_CONFIG = '{"run_type":"server","local_addr":"0.0.0.0","local_port":443,"remote_addr":"www.taobao.com","remote_port":80,"password":[],"ssl":{"cert":"server.crt","key":"server.key","sni":"domain.com"},"api":{"enabled":true,"api_addr":"127.0.0.1","api_port":10000}}';
-    public function getVmess(User $user, $all = false):array
+    public function getV2ray(User $user, $all = false):array
     {
-        $vmess = [];
-        $model = Server::orderBy('sort', 'ASC');
+        $servers = [];
+        $model = ServerV2ray::orderBy('sort', 'ASC');
         if (!$all) {
             $model->where('show', 1);
         }
-        $vmesss = $model->get();
-        foreach ($vmesss as $k => $v) {
-            $groupId = json_decode($vmesss[$k]['group_id']);
+        $v2ray = $model->get();
+        for ($i = 0; $i < count($v2ray); $i++) {
+            $v2ray[$i]['type'] = 'v2ray';
+            $groupId = $v2ray[$i]['group_id'];
             if (in_array($user->group_id, $groupId)) {
-                $vmesss[$k]['link'] = Helper::buildVmessLink($vmesss[$k], $user);
-                if ($vmesss[$k]['parent_id']) {
-                    $vmesss[$k]['last_check_at'] = Cache::get(CacheKey::get('SERVER_V2RAY_LAST_CHECK_AT', $vmesss[$k]['parent_id']));
+                if ($v2ray[$i]['parent_id']) {
+                    $v2ray[$i]['last_check_at'] = Cache::get(CacheKey::get('SERVER_V2RAY_LAST_CHECK_AT', $v2ray[$i]['parent_id']));
                 } else {
-                    $vmesss[$k]['last_check_at'] = Cache::get(CacheKey::get('SERVER_V2RAY_LAST_CHECK_AT', $vmesss[$k]['id']));
+                    $v2ray[$i]['last_check_at'] = Cache::get(CacheKey::get('SERVER_V2RAY_LAST_CHECK_AT', $v2ray[$i]['id']));
                 }
-                array_push($vmess, $vmesss[$k]);
+                array_push($servers, $v2ray[$i]->toArray());
             }
         }
 
 
-        return $vmess;
+        return $servers;
     }
 
-    public function getTrojan(User $user, $all = false)
+    public function getTrojan(User $user, $all = false):array
     {
-        $trojan = [];
+        $servers = [];
         $model = ServerTrojan::orderBy('sort', 'ASC');
         if (!$all) {
             $model->where('show', 1);
         }
-        $trojans = $model->get();
-        foreach ($trojans as $k => $v) {
-            $groupId = json_decode($trojans[$k]['group_id']);
+        $trojan = $model->get();
+        for ($i = 0; $i < count($trojan); $i++) {
+            $trojan[$i]['type'] = 'trojan';
+            $groupId = $trojan[$i]['group_id'];
             if (in_array($user->group_id, $groupId)) {
-                if ($trojans[$k]['parent_id']) {
-                    $trojans[$k]['last_check_at'] = Cache::get(CacheKey::get('SERVER_TROJAN_LAST_CHECK_AT', $trojans[$k]['parent_id']));
+                if ($trojan[$i]['parent_id']) {
+                    $trojan[$i]['last_check_at'] = Cache::get(CacheKey::get('SERVER_TROJAN_LAST_CHECK_AT', $trojan[$i]['parent_id']));
                 } else {
-                    $trojans[$k]['last_check_at'] = Cache::get(CacheKey::get('SERVER_TROJAN_LAST_CHECK_AT', $trojans[$k]['id']));
+                    $trojan[$i]['last_check_at'] = Cache::get(CacheKey::get('SERVER_TROJAN_LAST_CHECK_AT', $trojan[$i]['id']));
                 }
-                array_push($trojan, $trojans[$k]);
+                array_push($servers, $trojan[$i]->toArray());
+            }
+        }
+        return $servers;
+    }
+
+    public function getShadowsocks(User $user, $all = false)
+    {
+        $servers = [];
+        $model = ServerShadowsocks::orderBy('sort', 'ASC');
+        if (!$all) {
+            $model->where('show', 1);
+        }
+        $shadowsocks = $model->get();
+        for ($i = 0; $i < count($shadowsocks); $i++) {
+            $shadowsocks[$i]['type'] = 'shadowsocks';
+            $groupId = $shadowsocks[$i]['group_id'];
+            if (in_array($user->group_id, $groupId)) {
+                if ($shadowsocks[$i]['parent_id']) {
+                    $shadowsocks[$i]['last_check_at'] = Cache::get(CacheKey::get('SERVER_SHADOWSOCKS_LAST_CHECK_AT', $shadowsocks[$i]['parent_id']));
+                } else {
+                    $shadowsocks[$i]['last_check_at'] = Cache::get(CacheKey::get('SERVER_SHADOWSOCKS_LAST_CHECK_AT', $shadowsocks[$i]['id']));
+                }
+                array_push($servers, $shadowsocks[$i]->toArray());
             }
 
         }
-        return $trojan;
+        return $servers;
     }
 
-    public function getAllServers(User $user, $all = false)
+    public function getAvailableServers(User $user, $all = false)
     {
-        return [
-            'vmess' => $this->getVmess($user, $all),
-            'trojan' => $this->getTrojan($user, $all)
-        ];
+        $servers = array_merge(
+            $this->getShadowsocks($user, $all),
+            $this->getV2ray($user, $all),
+            $this->getTrojan($user, $all)
+        );
+        $tmp = array_column($servers, 'sort');
+        array_multisort($tmp, SORT_ASC, $servers);
+        return $servers;
     }
 
 
@@ -88,21 +116,19 @@ class ServerService
                 'u',
                 'd',
                 'transfer_enable',
-                'uuid',
-                'v2ray_alter_id',
-                'v2ray_level'
+                'uuid'
             ])
             ->get();
     }
 
-    public function getVmessConfig(int $nodeId, int $localPort)
+    public function getV2RayConfig(int $nodeId, int $localPort)
     {
-        $server = Server::find($nodeId);
+        $server = ServerV2ray::find($nodeId);
         if (!$server) {
             abort(500, '节点不存在');
         }
         $json = json_decode(self::V2RAY_CONFIG);
-        $json->log->loglevel = config('v2board.server_log_level', 'none');
+        $json->log->loglevel = (int)config('v2board.server_log_enable') ? 'debug' : 'none';
         $json->inboundDetour[0]->port = (int)$localPort;
         $json->inbound->port = (int)$server->server_port;
         $json->inbound->streamSettings->network = $server->network;
@@ -130,10 +156,10 @@ class ServerService
         return $json;
     }
 
-    private function setDns(Server $server, object $json)
+    private function setDns(ServerV2ray $server, object $json)
     {
         if ($server->dnsSettings) {
-            $dns = json_decode($server->dnsSettings);
+            $dns = $server->dnsSettings;
             if (isset($dns->servers)) {
                 array_push($dns->servers, '1.1.1.1');
                 array_push($dns->servers, 'localhost');
@@ -143,61 +169,79 @@ class ServerService
         }
     }
 
-    private function setNetwork(Server $server, object $json)
+    private function setNetwork(ServerV2ray $server, object $json)
     {
         if ($server->networkSettings) {
             switch ($server->network) {
                 case 'tcp':
-                    $json->inbound->streamSettings->tcpSettings = json_decode($server->networkSettings);
+                    $json->inbound->streamSettings->tcpSettings = $server->networkSettings;
                     break;
                 case 'kcp':
-                    $json->inbound->streamSettings->kcpSettings = json_decode($server->networkSettings);
+                    $json->inbound->streamSettings->kcpSettings = $server->networkSettings;
                     break;
                 case 'ws':
-                    $json->inbound->streamSettings->wsSettings = json_decode($server->networkSettings);
+                    $json->inbound->streamSettings->wsSettings = $server->networkSettings;
                     break;
                 case 'http':
-                    $json->inbound->streamSettings->httpSettings = json_decode($server->networkSettings);
+                    $json->inbound->streamSettings->httpSettings = $server->networkSettings;
                     break;
                 case 'domainsocket':
-                    $json->inbound->streamSettings->dsSettings = json_decode($server->networkSettings);
+                    $json->inbound->streamSettings->dsSettings = $server->networkSettings;
                     break;
                 case 'quic':
-                    $json->inbound->streamSettings->quicSettings = json_decode($server->networkSettings);
+                    $json->inbound->streamSettings->quicSettings = $server->networkSettings;
+                    break;
+                case 'grpc':
+                    $json->inbound->streamSettings->grpcSettings = $server->networkSettings;
                     break;
             }
         }
     }
 
-    private function setRule(Server $server, object $json)
+    private function setRule(ServerV2ray $server, object $json)
     {
+        $domainRules = array_filter(explode(PHP_EOL, config('v2board.server_v2ray_domain')));
+        $protocolRules = array_filter(explode(PHP_EOL, config('v2board.server_v2ray_protocol')));
         if ($server->ruleSettings) {
-            $rules = json_decode($server->ruleSettings);
+            $ruleSettings = $server->ruleSettings;
             // domain
-            if (isset($rules->domain) && !empty($rules->domain)) {
-                $rules->domain = array_filter($rules->domain);
-                $domainObj = new \StdClass();
-                $domainObj->type = 'field';
-                $domainObj->domain = $rules->domain;
-                $domainObj->outboundTag = 'block';
-                array_push($json->routing->rules, $domainObj);
+            if (isset($ruleSettings->domain)) {
+                $ruleSettings->domain = array_filter($ruleSettings->domain);
+                if (!empty($ruleSettings->domain)) {
+                    $domainRules = array_merge($domainRules, $ruleSettings->domain);
+                }
             }
             // protocol
-            if (isset($rules->protocol) && !empty($rules->protocol)) {
-                $rules->protocol = array_filter($rules->protocol);
-                $protocolObj = new \StdClass();
-                $protocolObj->type = 'field';
-                $protocolObj->protocol = $rules->protocol;
-                $protocolObj->outboundTag = 'block';
-                array_push($json->routing->rules, $protocolObj);
+            if (isset($ruleSettings->protocol)) {
+                $ruleSettings->protocol = array_filter($ruleSettings->protocol);
+                if (!empty($ruleSettings->protocol)) {
+                    $protocolRules = array_merge($protocolRules, $ruleSettings->protocol);
+                }
             }
+        }
+        if (!empty($domainRules)) {
+            $domainObj = new \StdClass();
+            $domainObj->type = 'field';
+            $domainObj->domain = $domainRules;
+            $domainObj->outboundTag = 'block';
+            array_push($json->routing->rules, $domainObj);
+        }
+        if (!empty($protocolRules)) {
+            $protocolObj = new \StdClass();
+            $protocolObj->type = 'field';
+            $protocolObj->protocol = $protocolRules;
+            $protocolObj->outboundTag = 'block';
+            array_push($json->routing->rules, $protocolObj);
+        }
+        if (empty($domainRules) && empty($protocolRules)) {
+            $json->inbound->sniffing->enabled = false;
         }
     }
 
-    private function setTls(Server $server, object $json)
+    private function setTls(ServerV2ray $server, object $json)
     {
         if ((int)$server->tls) {
-            $tlsSettings = json_decode($server->tlsSettings);
+            $tlsSettings = $server->tlsSettings;
             $json->inbound->streamSettings->security = 'tls';
             $tls = (object)[
                 'certificateFile' => '/root/.cert/server.crt',
@@ -216,8 +260,8 @@ class ServerService
 
     public function log(int $userId, int $serverId, int $u, int $d, float $rate, string $method)
     {
-        if (($u + $d) <= 10240) return;
-        $timestamp = strtotime(date('Y-m-d H:0'));
+        if (($u + $d) < 10240) return true;
+        $timestamp = strtotime(date('Y-m-d'));
         $serverLog = ServerLog::where('log_at', '>=', $timestamp)
             ->where('log_at', '<', $timestamp + 3600)
             ->where('server_id', $serverId)
@@ -226,9 +270,13 @@ class ServerService
             ->where('method', $method)
             ->first();
         if ($serverLog) {
-            $serverLog->u = $serverLog->u + $u;
-            $serverLog->d = $serverLog->d + $d;
-            $serverLog->save();
+            try {
+                $serverLog->increment('u', $u);
+                $serverLog->increment('d', $d);
+                return true;
+            } catch (\Exception $e) {
+                return false;
+            }
         } else {
             $serverLog = new ServerLog();
             $serverLog->user_id = $userId;
@@ -238,7 +286,69 @@ class ServerService
             $serverLog->rate = $rate;
             $serverLog->log_at = $timestamp;
             $serverLog->method = $method;
-            $serverLog->save();
+            return $serverLog->save();
         }
+    }
+
+    public function getShadowsocksServers()
+    {
+        $server = ServerShadowsocks::orderBy('sort', 'ASC')->get();
+        for ($i = 0; $i < count($server); $i++) {
+            $server[$i]['type'] = 'shadowsocks';
+        }
+        return $server->toArray();
+    }
+
+    public function getV2rayServers()
+    {
+        $server = ServerV2ray::orderBy('sort', 'ASC')->get();
+        for ($i = 0; $i < count($server); $i++) {
+            $server[$i]['type'] = 'v2ray';
+        }
+        return $server->toArray();
+    }
+
+    public function getTrojanServers()
+    {
+        $server = ServerTrojan::orderBy('sort', 'ASC')->get();
+        for ($i = 0; $i < count($server); $i++) {
+            $server[$i]['type'] = 'trojan';
+        }
+        return $server->toArray();
+    }
+
+    public function mergeData(&$servers)
+    {
+        foreach ($servers as $k => $v) {
+            $serverType = strtoupper($servers[$k]['type']);
+            $servers[$k]['online'] = Cache::get(CacheKey::get("SERVER_{$serverType}_ONLINE_USER", $servers[$k]['parent_id'] ? $servers[$k]['parent_id'] : $servers[$k]['id']));
+            if ($servers[$k]['parent_id']) {
+                $servers[$k]['last_check_at'] = Cache::get(CacheKey::get("SERVER_{$serverType}_LAST_CHECK_AT", $servers[$k]['parent_id']));
+                $servers[$k]['last_push_at'] = Cache::get(CacheKey::get("SERVER_{$serverType}_LAST_PUSH_AT", $servers[$k]['parent_id']));
+            } else {
+                $servers[$k]['last_check_at'] = Cache::get(CacheKey::get("SERVER_{$serverType}_LAST_CHECK_AT", $servers[$k]['id']));
+                $servers[$k]['last_push_at'] = Cache::get(CacheKey::get("SERVER_{$serverType}_LAST_PUSH_AT", $servers[$k]['id']));
+            }
+            if ((time() - 300) >= $servers[$k]['last_check_at']) {
+                $servers[$k]['available_status'] = 0;
+            } else if ((time() - 300) >= $servers[$k]['last_push_at']) {
+                $servers[$k]['available_status'] = 1;
+            } else {
+                $servers[$k]['available_status'] = 2;
+            }
+        }
+    }
+
+    public function getAllServers()
+    {
+        $servers = array_merge(
+            $this->getShadowsocksServers(),
+            $this->getV2rayServers(),
+            $this->getTrojanServers()
+        );
+        $this->mergeData($servers);
+        $tmp = array_column($servers, 'sort');
+        array_multisort($tmp, SORT_ASC, $servers);
+        return $servers;
     }
 }

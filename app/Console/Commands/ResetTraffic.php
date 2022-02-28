@@ -2,11 +2,14 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Plan;
 use Illuminate\Console\Command;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 
 class ResetTraffic extends Command
 {
+    protected $builder;
     /**
      * The name and signature of the console command.
      *
@@ -29,6 +32,8 @@ class ResetTraffic extends Command
     public function __construct()
     {
         parent::__construct();
+        $this->builder = User::where('expired_at', '!=', NULL)
+            ->where('expired_at', '>', time());
     }
 
     /**
@@ -38,36 +43,58 @@ class ResetTraffic extends Command
      */
     public function handle()
     {
-        $user = User::where('expired_at', '!=', NULL)
-            ->where('expired_at', '>', time());
-        $resetTrafficMethod = config('v2board.reset_traffic_method', 0);
-        switch ((int)$resetTrafficMethod) {
-            // 1 a month
-            case 0:
-                $this->resetByMonthFirstDay($user);
-                break;
-            // expire day
-            case 1:
-                $this->resetByExpireDay($user);
-                break;
+        ini_set('memory_limit', -1);
+        foreach (Plan::get() as $plan) {
+            switch ($plan->reset_traffic_method) {
+                case null: {
+                    $resetTrafficMethod = config('v2board.reset_traffic_method', 0);
+                    switch ((int)$resetTrafficMethod) {
+                        // month first day
+                        case 0:
+                            $this->resetByMonthFirstDay($this->builder);
+                            break;
+                        // expire day
+                        case 1:
+                            $this->resetByExpireDay($this->builder);
+                            break;
+                        // no action
+                        case 2:
+                            break;
+                    }
+                    break;
+                }
+                case 0: {
+                    $builder = with(clone($this->builder))->where('plan_id', $plan->id);
+                    $this->resetByMonthFirstDay($builder);
+                    break;
+                }
+                case 1: {
+                    $builder = with(clone($this->builder))->where('plan_id', $plan->id);
+                    $this->resetByExpireDay($builder);
+                    break;
+                }
+                case 2: {
+                    break;
+                }
+            }
         }
     }
 
-    private function resetByMonthFirstDay($user):void
+    private function resetByMonthFirstDay($builder):void
     {
         if ((string)date('d') === '01') {
-            $user->update([
+            $builder->update([
                 'u' => 0,
                 'd' => 0
             ]);
         }
     }
 
-    private function resetByExpireDay($user):void
+    private function resetByExpireDay($builder):void
     {
         $lastDay = date('d', strtotime('last day of +0 months'));
         $users = [];
-        foreach ($user->get() as $item) {
+        foreach ($builder->get() as $item) {
             $expireDay = date('d', $item->expired_at);
             $today = date('d');
             if ($expireDay === $today) {

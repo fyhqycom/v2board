@@ -35,6 +35,7 @@ class Kernel extends HttpKernel
             \Illuminate\View\Middleware\ShareErrorsFromSession::class,
             \App\Http\Middleware\VerifyCsrfToken::class,
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
+            \App\Http\Middleware\CORS::class,
         ],
 
         'api' => [
@@ -43,7 +44,7 @@ class Kernel extends HttpKernel
             \Illuminate\Session\Middleware\StartSession::class,
             \App\Http\Middleware\ForceJson::class,
             \App\Http\Middleware\CORS::class,
-            'throttle:120,1',
+            \App\Http\Middleware\Language::class,
             'bindings',
         ],
     ];
@@ -68,7 +69,7 @@ class Kernel extends HttpKernel
         'user' => \App\Http\Middleware\User::class,
         'admin' => \App\Http\Middleware\Admin::class,
         'client' => \App\Http\Middleware\Client::class,
-        'server' => \App\Http\Middleware\Server::class,
+        'staff' => \App\Http\Middleware\Staff::class,
     ];
 
     /**

@@ -14,7 +14,7 @@ class InviteController extends Controller
     public function save(Request $request)
     {
         if (InviteCode::where('user_id', $request->session()->get('id'))->where('status', 0)->count() >= config('v2board.invite_gen_limit', 5)) {
-            abort(500, '已达到创建数量上限');
+            abort(500, __('The maximum number of creations has been reached'));
         }
         $inviteCode = new InviteCode();
         $inviteCode->user_id = $request->session()->get('id');
@@ -29,7 +29,7 @@ class InviteController extends Controller
         return response([
             'data' => Order::where('invite_user_id', $request->session()->get('id'))
                 ->where('commission_balance', '>', 0)
-                ->where('status', 3)
+                ->whereIn('status', [3, 4])
                 ->select([
                     'id',
                     'commission_status',

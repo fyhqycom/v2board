@@ -8,7 +8,7 @@ use App\Utils\CacheKey;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use App\Models\User;
-use App\Models\Server;
+use App\Models\ServerV2ray;
 use App\Models\ServerLog;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -35,24 +35,23 @@ class DeepbworkController extends Controller
     public function user(Request $request)
     {
         $nodeId = $request->input('node_id');
-        $server = Server::find($nodeId);
+        $server = ServerV2ray::find($nodeId);
         if (!$server) {
             abort(500, 'fail');
         }
         Cache::put(CacheKey::get('SERVER_V2RAY_LAST_CHECK_AT', $server->id), time(), 3600);
         $serverService = new ServerService();
-        $users = $serverService->getAvailableUsers(json_decode($server->group_id));
+        $users = $serverService->getAvailableUsers($server->group_id);
         $result = [];
         foreach ($users as $user) {
             $user->v2ray_user = [
                 "uuid" => $user->uuid,
                 "email" => sprintf("%s@v2board.user", $user->uuid),
-                "alter_id" => $user->v2ray_alter_id,
-                "level" => $user->v2ray_level,
+                "alter_id" => $server->alter_id,
+                "level" => 0,
             ];
             unset($user['uuid']);
-            unset($user['v2ray_alter_id']);
-            unset($user['v2ray_level']);
+            unset($user['email']);
             array_push($result, $user);
         }
         return response([
@@ -64,8 +63,8 @@ class DeepbworkController extends Controller
     // 后端提交数据
     public function submit(Request $request)
     {
-        // Log::info('serverSubmitData:' . $request->input('node_id') . ':' . file_get_contents('php://input'));
-        $server = Server::find($request->input('node_id'));
+//         Log::info('serverSubmitData:' . $request->input('node_id') . ':' . file_get_contents('php://input'));
+        $server = ServerV2ray::find($request->input('node_id'));
         if (!$server) {
             return response([
                 'ret' => 0,
@@ -75,26 +74,12 @@ class DeepbworkController extends Controller
         $data = file_get_contents('php://input');
         $data = json_decode($data, true);
         Cache::put(CacheKey::get('SERVER_V2RAY_ONLINE_USER', $server->id), count($data), 3600);
-        $serverService = new ServerService();
+        Cache::put(CacheKey::get('SERVER_V2RAY_LAST_PUSH_AT', $server->id), time(), 3600);
         $userService = new UserService();
         foreach ($data as $item) {
             $u = $item['u'] * $server->rate;
             $d = $item['d'] * $server->rate;
-            if (!$userService->trafficFetch($u, $d, $item['user_id'])) {
-                return response([
-                    'ret' => 0,
-                    'msg' => 'user fetch fail'
-                ]);
-            }
-
-            $serverService->log(
-                $item['user_id'],
-                $request->input('node_id'),
-                $item['u'],
-                $item['d'],
-                $server->rate,
-                'vmess'
-            );
+            $userService->trafficFetch($u, $d, $item['user_id'], $server, 'vmess');
         }
 
         return response([
@@ -113,7 +98,7 @@ class DeepbworkController extends Controller
         }
         $serverService = new ServerService();
         try {
-            $json = $serverService->getVmessConfig($nodeId, $localPort);
+            $json = $serverService->getV2RayConfig($nodeId, $localPort);
         } catch (\Exception $e) {
             abort(500, $e->getMessage());
         }

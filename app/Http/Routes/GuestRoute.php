@@ -12,13 +12,12 @@ class GuestRoute
         ], function ($router) {
             // Plan
             $router->get ('/plan/fetch', 'Guest\\PlanController@fetch');
-            // Order
-            $router->post('/order/alipayNotify', 'Guest\\OrderController@alipayNotify');
-            $router->post('/order/stripeNotify', 'Guest\\OrderController@stripeNotify');
-            $router->post('/order/bitpayXNotify', 'Guest\\OrderController@bitpayXNotify');
-            $router->post('/order/payTaroNotify', 'Guest\\OrderController@payTaroNotify');
             // Telegram
             $router->post('/telegram/webhook', 'Guest\\TelegramController@webhook');
+            // Payment
+            $router->match(['get', 'post'], '/payment/notify/{method}/{uuid}', 'Guest\\PaymentController@notify');
+            // Comm
+            $router->get ('/comm/config', 'Guest\\CommController@config');
         });
     }
 }

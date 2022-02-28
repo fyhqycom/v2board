@@ -296,3 +296,178 @@ CHANGE `show` `show` tinyint(1) NOT NULL DEFAULT '0' COMMENT '是否显示' AFTE
 
 ALTER TABLE `v2_server_trojan`
 ADD `server_name` varchar(255) NULL AFTER `allow_insecure`;
+
+UPDATE `v2_server` SET
+`ruleSettings` = NULL
+WHERE `ruleSettings` = '{}';
+
+ALTER TABLE `v2_plan`
+ADD `two_year_price` int(11) NULL AFTER `year_price`,
+ADD `three_year_price` int(11) NULL AFTER `two_year_price`;
+
+ALTER TABLE `v2_user`
+ADD `is_staff` tinyint(1) NOT NULL DEFAULT '0' AFTER `is_admin`;
+
+CREATE TABLE `v2_server_shadowsocks` (
+  `id` int NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `group_id` varchar(255) NOT NULL,
+  `parent_id` int(11) NULL,
+  `tags` varchar(255) NULL,
+  `name` varchar(255) NOT NULL,
+  `rate` varchar(11) NOT NULL,
+  `host` varchar(255) NOT NULL,
+  `port` int(11) NOT NULL,
+  `server_port` int(11) NOT NULL,
+  `cipher` varchar(255) NOT NULL,
+  `show` tinyint NOT NULL DEFAULT '0',
+  `sort` int(11) NULL,
+  `created_at` int(11) NOT NULL,
+  `updated_at` int(11) NOT NULL
+) COLLATE 'utf8mb4_general_ci';
+
+ALTER TABLE `v2_coupon`
+CHANGE `code` `code` varchar(255) COLLATE 'utf8_general_ci' NOT NULL AFTER `id`;
+
+CREATE TABLE `v2_knowledge` (
+  `id` int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `language` char(5) NOT NULL COMMENT '語言',
+  `category` varchar(255) NOT NULL COMMENT '分類名',
+  `title` varchar(255) NOT NULL COMMENT '標題',
+  `body` text NOT NULL COMMENT '內容',
+  `sort` int(11) NULL COMMENT '排序',
+  `show` tinyint(1) NOT NULL DEFAULT '0' COMMENT '顯示',
+  `created_at` int(11) NOT NULL COMMENT '創建時間',
+  `updated_at` int(11) NOT NULL COMMENT '更新時間'
+) COMMENT='知識庫' COLLATE 'utf8mb4_general_ci';
+
+ALTER TABLE `v2_order`
+ADD `coupon_id` int(11) NULL AFTER `plan_id`;
+
+ALTER TABLE `v2_server_stat`
+ADD `method` varchar(255) NOT NULL AFTER `server_id`;
+
+ALTER TABLE `v2_server`
+ADD `alter_id` int(11) NOT NULL DEFAULT '1' AFTER `network`;
+
+ALTER TABLE `v2_user`
+DROP `v2ray_alter_id`,
+DROP `v2ray_level`;
+
+DROP TABLE `v2_server_stat`;
+
+CREATE TABLE `v2_stat_server` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `server_id` int(11) NOT NULL COMMENT '节点id',
+  `server_type` char(11) NOT NULL COMMENT '节点类型',
+  `u` varchar(255) NOT NULL,
+  `d` varchar(255) NOT NULL,
+  `record_type` char(1) NOT NULL COMMENT 'd day m month',
+  `record_at` int(11) NOT NULL COMMENT '记录时间',
+  `created_at` int(11) NOT NULL,
+  `updated_at` int(11) NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COMMENT='节点数据统计';
+
+ALTER TABLE `v2_stat_server`
+ADD UNIQUE `server_id_server_type_record_at` (`server_id`, `server_type`, `record_at`);
+
+ALTER TABLE `v2_stat_server`
+ADD INDEX `record_at` (`record_at`),
+ADD INDEX `server_id` (`server_id`);
+
+CREATE TABLE `v2_stat_order` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `order_count` int(11) NOT NULL COMMENT '订单数量',
+  `order_amount` int(11) NOT NULL COMMENT '订单合计',
+  `commission_count` int(11) NOT NULL,
+  `commission_amount` int(11) NOT NULL COMMENT '佣金合计',
+  `record_type` char(1) NOT NULL,
+  `record_at` int(11) NOT NULL,
+  `created_at` int(11) NOT NULL,
+  `updated_at` int(11) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `record_at` (`record_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COMMENT='订单统计';
+
+ALTER TABLE `v2_user`
+DROP `enable`;
+
+ALTER TABLE `v2_user`
+    ADD `remarks` text COLLATE 'utf8_general_ci' NULL AFTER `token`;
+
+CREATE TABLE `v2_payment` (
+                              `id` int NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                              `payment` varchar(16) NOT NULL,
+                              `name` varchar(255) NOT NULL,
+                              `config` text NOT NULL,
+                              `enable` tinyint(1) NOT NULL DEFAULT '0',
+                              `sort` int(11) DEFAULT NULL,
+                              `created_at` int(11) NOT NULL,
+                              `updated_at` int(11) NOT NULL
+) COLLATE 'utf8mb4_general_ci';
+
+ALTER TABLE `v2_order`
+    ADD `payment_id` int(11) NULL AFTER `coupon_id`;
+
+ALTER TABLE `v2_payment`
+    ADD `uuid` char(32) NOT NULL AFTER `id`;
+
+ALTER TABLE `v2_user`
+    ADD UNIQUE `email_deleted_at` (`email`, `deleted_at`),
+DROP INDEX `email`;
+
+ALTER TABLE `v2_user`
+DROP `deleted_at`;
+
+ALTER TABLE `v2_user`
+    ADD UNIQUE `email` (`email`),
+DROP INDEX `email_deleted_at`;
+
+ALTER TABLE `v2_user`
+    ADD `commission_type` tinyint NOT NULL DEFAULT '0' COMMENT '0: system 1: cycle 2: onetime' AFTER `discount`;
+
+ALTER TABLE `v2_order`
+    ADD `paid_at` int(11) NULL AFTER `commission_balance`;
+
+ALTER TABLE `v2_server_log`
+    ADD INDEX `user_id` (`user_id`),
+ADD INDEX `server_id` (`server_id`);
+
+ALTER TABLE `v2_ticket_message`
+    CHANGE `message` `message` text COLLATE 'utf8mb4_general_ci' NOT NULL AFTER `ticket_id`;
+
+ALTER TABLE `v2_coupon`
+    ADD `limit_use_with_user` int(11) NULL AFTER `limit_use`;
+
+ALTER TABLE `v2_user`
+    ADD `password_salt` char(10) COLLATE 'utf8_general_ci' NULL AFTER `password_algo`;
+
+CREATE TABLE `v2_commission_log` (
+                                     `id` int NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                                     `invite_user_id` int(11) NOT NULL,
+                                     `user_id` int(11) NOT NULL,
+                                     `trade_no` char(36) NOT NULL,
+                                     `order_amount` int(11) NOT NULL,
+                                     `get_amount` int(11) NOT NULL,
+                                     `created_at` int(11) NOT NULL,
+                                     `updated_at` int(11) NOT NULL
+) COLLATE 'utf8mb4_general_ci';
+
+ALTER TABLE `v2_plan`
+    ADD `reset_traffic_method` tinyint(1) NULL AFTER `reset_price`;
+
+ALTER TABLE `v2_server`
+    RENAME TO `v2_server_v2ray`;
+
+ALTER TABLE `v2_user`
+    CHANGE `remind_expire` `remind_expire` tinyint(4) NULL DEFAULT '0' AFTER `plan_id`,
+    CHANGE `remind_traffic` `remind_traffic` tinyint(4) NULL DEFAULT '0' AFTER `remind_expire`;
+
+ALTER TABLE `v2_payment`
+    ADD `icon` varchar(255) COLLATE 'utf8mb4_general_ci' NULL AFTER `name`;
+
+ALTER TABLE `v2_coupon`
+    ADD `limit_period` varchar(255) COLLATE 'utf8_general_ci' NULL AFTER `limit_plan_ids`;
+
+ALTER TABLE `v2_order`
+    CHANGE `cycle` `period` varchar(255) COLLATE 'utf8_general_ci' NOT NULL AFTER `type`;

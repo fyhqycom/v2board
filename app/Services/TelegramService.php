@@ -1,7 +1,10 @@
 <?php
 namespace App\Services;
 
+use App\Jobs\SendTelegramJob;
+use App\Models\User;
 use \Curl\Curl;
+use Illuminate\Mail\Markdown;
 
 class TelegramService {
     protected $api;
@@ -13,6 +16,9 @@ class TelegramService {
 
     public function sendMessage(int $chatId, string $text, string $parseMode = '')
     {
+        if ($parseMode === 'markdown') {
+            $text = str_replace('_', '\_', $text);
+        }
         $this->request('sendMessage', [
             'chat_id' => $chatId,
             'text' => $text,
@@ -38,9 +44,26 @@ class TelegramService {
         $curl->get($this->api . $method . '?' . http_build_query($params));
         $response = $curl->response;
         $curl->close();
+        if (!isset($response->ok)) abort(500, '请求失败');
         if (!$response->ok) {
             abort(500, '来自TG的错误：' . $response->description);
         }
         return $response;
+    }
+
+    public function sendMessageWithAdmin($message, $isStaff = false)
+    {
+        if (!config('v2board.telegram_bot_enable', 0)) return;
+        $users = User::where(function ($query) use ($isStaff) {
+            $query->where('is_admin', 1);
+            if ($isStaff) {
+                $query->orWhere('is_staff', 1);
+            }
+        })
+            ->where('telegram_id', '!=', NULL)
+            ->get();
+        foreach ($users as $user) {
+            SendTelegramJob::dispatch($user->telegram_id, $message);
+        }
     }
 }

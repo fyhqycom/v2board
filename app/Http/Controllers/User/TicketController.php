@@ -7,6 +7,8 @@ use App\Http\Requests\User\TicketSave;
 use App\Http\Requests\User\TicketWithdraw;
 use App\Jobs\SendTelegramJob;
 use App\Models\User;
+use App\Services\TelegramService;
+use App\Utils\Dict;
 use Illuminate\Http\Request;
 use App\Models\Ticket;
 use App\Models\TicketMessage;
@@ -21,7 +23,7 @@ class TicketController extends Controller
                 ->where('user_id', $request->session()->get('id'))
                 ->first();
             if (!$ticket) {
-                abort(500, '工单不存在');
+                abort(500, __('Ticket does not exist'));
             }
             $ticket['message'] = TicketMessage::where('ticket_id', $ticket->id)->get();
             for ($i = 0; $i < count($ticket['message']); $i++) {
@@ -54,7 +56,7 @@ class TicketController extends Controller
     {
         DB::beginTransaction();
         if ((int)Ticket::where('status', 0)->where('user_id', $request->session()->get('id'))->count()) {
-            abort(500, '存在其他工单尚未处理');
+            abort(500, __('There are other unresolved tickets'));
         }
         $ticket = Ticket::create(array_merge($request->only([
             'subject',
@@ -65,7 +67,7 @@ class TicketController extends Controller
         ]));
         if (!$ticket) {
             DB::rollback();
-            abort(500, '工单创建失败');
+            abort(500, __('Failed to open ticket'));
         }
         $ticketMessage = TicketMessage::create([
             'user_id' => $request->session()->get('id'),
@@ -74,7 +76,7 @@ class TicketController extends Controller
         ]);
         if (!$ticketMessage) {
             DB::rollback();
-            abort(500, '工单创建失败');
+            abort(500, __('Failed to open ticket'));
         }
         DB::commit();
         $this->sendNotify($ticket, $ticketMessage);
@@ -86,22 +88,22 @@ class TicketController extends Controller
     public function reply(Request $request)
     {
         if (empty($request->input('id'))) {
-            abort(500, '参数错误');
+            abort(500, __('Invalid parameter'));
         }
         if (empty($request->input('message'))) {
-            abort(500, '消息不能为空');
+            abort(500, __('Message cannot be empty'));
         }
         $ticket = Ticket::where('id', $request->input('id'))
             ->where('user_id', $request->session()->get('id'))
             ->first();
         if (!$ticket) {
-            abort(500, '工单不存在');
+            abort(500, __('Ticket does not exist'));
         }
         if ($ticket->status) {
-            abort(500, '工单已关闭，无法回复');
+            abort(500, __('The ticket is closed and cannot be replied'));
         }
         if ($request->session()->get('id') == $this->getLastMessage($ticket->id)->user_id) {
-            abort(500, '请等待技术支持回复');
+            abort(500, __('Please wait for the technical enginneer to reply'));
         }
         DB::beginTransaction();
         $ticketMessage = TicketMessage::create([
@@ -112,7 +114,7 @@ class TicketController extends Controller
         $ticket->last_reply_user_id = $request->session()->get('id');
         if (!$ticketMessage || !$ticket->save()) {
             DB::rollback();
-            abort(500, '工单回复失败');
+            abort(500, __('Ticket reply failed'));
         }
         DB::commit();
         $this->sendNotify($ticket, $ticketMessage);
@@ -125,17 +127,17 @@ class TicketController extends Controller
     public function close(Request $request)
     {
         if (empty($request->input('id'))) {
-            abort(500, '参数错误');
+            abort(500, __('Invalid parameter'));
         }
         $ticket = Ticket::where('id', $request->input('id'))
             ->where('user_id', $request->session()->get('id'))
             ->first();
         if (!$ticket) {
-            abort(500, '工单不存在');
+            abort(500, __('Ticket does not exist'));
         }
         $ticket->status = 1;
         if (!$ticket->save()) {
-            abort(500, '关闭失败');
+            abort(500, __('Close failed'));
         }
         return response([
             'data' => true
@@ -151,8 +153,25 @@ class TicketController extends Controller
 
     public function withdraw(TicketWithdraw $request)
     {
+        if ((int)config('v2board.withdraw_close_enable', 0)) {
+            abort(500, 'user.ticket.withdraw.not_support_withdraw');
+        }
+        if (!in_array(
+            $request->input('withdraw_method'),
+            config(
+                'v2board.commission_withdraw_method',
+                Dict::WITHDRAW_METHOD_WHITELIST_DEFAULT
+            )
+        )) {
+            abort(500, __('Unsupported withdrawal method'));
+        }
+        $user = User::find($request->session()->get('id'));
+        $limit = config('v2board.commission_withdraw_limit', 100);
+        if ($limit > ($user->commission_balance / 100)) {
+            abort(500, __('The current required minimum withdrawal commission is :limit', ['limit' => $limit]));
+        }
         DB::beginTransaction();
-        $subject = '[提现申请]本工单由系统发出';
+        $subject = __('[Commission Withdrawal Request] This ticket is opened by the system');
         $ticket = Ticket::create([
             'subject' => $subject,
             'level' => 2,
@@ -161,15 +180,12 @@ class TicketController extends Controller
         ]);
         if (!$ticket) {
             DB::rollback();
-            abort(500, '工单创建失败');
+            abort(500, __('Failed to open ticket'));
         }
-        $methodText = [
-            'alipay' => '支付宝',
-            'paypal' => '贝宝(Paypal)',
-            'usdt' => 'USDT',
-            'btc' => '比特币'
-        ];
-        $message = "提现方式：{$methodText[$request->input('withdraw_method')]}\r\n提现账号：{$request->input('withdraw_account')}\r\n";
+        $message = sprintf("%s\r\n%s",
+            __('Withdrawal method') . "：" . $request->input('withdraw_method'),
+            __('Withdrawal account') . "：" . $request->input('withdraw_account')
+        );
         $ticketMessage = TicketMessage::create([
             'user_id' => $request->session()->get('id'),
             'ticket_id' => $ticket->id,
@@ -177,7 +193,7 @@ class TicketController extends Controller
         ]);
         if (!$ticketMessage) {
             DB::rollback();
-            abort(500, '工单创建失败');
+            abort(500, __('Failed to open ticket'));
         }
         DB::commit();
         $this->sendNotify($ticket, $ticketMessage);
@@ -188,13 +204,7 @@ class TicketController extends Controller
 
     private function sendNotify(Ticket $ticket, TicketMessage $ticketMessage)
     {
-        if (!config('v2board.telegram_bot_enable', 0)) return;
-        $users = User::where('is_admin', 1)
-            ->where('telegram_id', '!=', NULL)
-            ->get();
-        foreach ($users as $user) {
-            $text = "📮工单提醒 #{$ticket->id}\n———————————————\n主题：\n`{$ticket->subject}`\n内容：\n`{$ticketMessage->message}`";
-            SendTelegramJob::dispatch($user->telegram_id, $text);
-        }
+        $telegramService = new TelegramService();
+        $telegramService->sendMessageWithAdmin("📮工单提醒 #{$ticket->id}\n———————————————\n主题：\n`{$ticket->subject}`\n内容：\n`{$ticketMessage->message}`", true);
     }
 }

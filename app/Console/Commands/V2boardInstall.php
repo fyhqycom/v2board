@@ -47,13 +47,12 @@ class V2boardInstall extends Command
             $this->info(" \ \ / /  __) |  _ \ / _ \ / _` | '__/ _` | ");
             $this->info("  \ V /  / __/| |_) | (_) | (_| | | | (_| | ");
             $this->info("   \_/  |_____|____/ \___/ \__,_|_|  \__,_| ");
-            if (\File::exists(base_path() . '/.lock')) {
-                abort(500, 'V2board 已安装，如需重新安装请删除目录下.lock文件');
+            if (\File::exists(base_path() . '/.env')) {
+                abort(500, 'V2board 已安装，如需重新安装请删除目录下.env文件');
             }
-            if (!\File::exists(base_path() . '/.env')) {
-                if (!copy(base_path() . '/.env.example', base_path() . '/.env')) {
-                    abort(500, '复制环境文件失败，请检查目录权限');
-                }
+
+            if (!copy(base_path() . '/.env.example', base_path() . '/.env')) {
+                abort(500, '复制环境文件失败，请检查目录权限');
             }
             $this->saveToEnv([
                 'APP_KEY' => 'base64:' . base64_encode(Encrypter::generateKey('AES-256-CBC')),
@@ -100,7 +99,6 @@ class V2boardInstall extends Command
 
             $this->info('一切就绪');
             $this->info('访问 http(s)://你的站点/admin 进入管理面板');
-            \File::put(base_path() . '/.lock', time());
         } catch (\Exception $e) {
             $this->error($e->getMessage());
         }
